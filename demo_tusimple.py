@@ -29,35 +29,73 @@ def get_tusimple_sequences(dataset_root):
     """Get all TuSimple sequence folders"""
     sequence_folders = []
     
-    # Look for date folders (like 0530, 0531, etc.) - sort naturally
-    date_folders = sorted(os.listdir(dataset_root), key=natural_sort_key)
+    # Check if dataset_root is directly a date folder (contains sequence folders)
+    # or a parent folder containing date folders
+    root_contents = sorted(os.listdir(dataset_root), key=natural_sort_key)
     
-    for date_folder in date_folders:
-        date_path = os.path.join(dataset_root, date_folder)
-        if os.path.isdir(date_path):
-            # Look for sequence folders within date folder - sort naturally
-            seq_folders = sorted(os.listdir(date_path), key=natural_sort_key)
-            
-            for seq_folder in seq_folders:
-                seq_path = os.path.join(date_path, seq_folder)
-                if os.path.isdir(seq_path):
-                    # Check if folder contains images
-                    image_files = []
-                    for ext in ['*.jpg', '*.jpeg', '*.png']:
-                        image_files.extend(glob.glob(os.path.join(seq_path, ext)))
-                        image_files.extend(glob.glob(os.path.join(seq_path, ext.upper())))
+    # Check if any item in root is a directory with numeric sequence-like names
+    has_sequence_folders = False
+    for item in root_contents:
+        item_path = os.path.join(dataset_root, item)
+        if os.path.isdir(item_path) and item.isdigit() and len(item) > 10:  # TuSimple sequences are long numbers
+            has_sequence_folders = True
+            break
+    
+    if has_sequence_folders:
+        # dataset_root is directly a date folder, process its sequence folders
+        date_name = os.path.basename(dataset_root)
+        print(f"Processing date folder directly: {date_name}")
+        
+        for seq_folder in root_contents:
+            seq_path = os.path.join(dataset_root, seq_folder)
+            if os.path.isdir(seq_path):
+                # Check if folder contains images
+                image_files = []
+                for ext in ['*.jpg', '*.jpeg', '*.png']:
+                    image_files.extend(glob.glob(os.path.join(seq_path, ext)))
+                    image_files.extend(glob.glob(os.path.join(seq_path, ext.upper())))
+                
+                if image_files:
+                    # Sort images naturally to ensure correct order
+                    sorted_images = sorted(image_files, key=lambda x: natural_sort_key(os.path.basename(x)))
                     
-                    if image_files:
-                        # Sort images naturally to ensure correct order
-                        sorted_images = sorted(image_files, key=lambda x: natural_sort_key(os.path.basename(x)))
+                    sequence_folders.append({
+                        'path': seq_path,
+                        'date': date_name,
+                        'sequence': seq_folder,
+                        'images': sorted_images,
+                        'count': len(sorted_images)
+                    })
+    else:
+        # dataset_root contains date folders, process each date folder
+        print("Processing parent folder containing date folders")
+        
+        for date_folder in root_contents:
+            date_path = os.path.join(dataset_root, date_folder)
+            if os.path.isdir(date_path):
+                # Look for sequence folders within date folder - sort naturally
+                seq_folders = sorted(os.listdir(date_path), key=natural_sort_key)
+                
+                for seq_folder in seq_folders:
+                    seq_path = os.path.join(date_path, seq_folder)
+                    if os.path.isdir(seq_path):
+                        # Check if folder contains images
+                        image_files = []
+                        for ext in ['*.jpg', '*.jpeg', '*.png']:
+                            image_files.extend(glob.glob(os.path.join(seq_path, ext)))
+                            image_files.extend(glob.glob(os.path.join(seq_path, ext.upper())))
                         
-                        sequence_folders.append({
-                            'path': seq_path,
-                            'date': date_folder,
-                            'sequence': seq_folder,
-                            'images': sorted_images,
-                            'count': len(sorted_images)
-                        })
+                        if image_files:
+                            # Sort images naturally to ensure correct order
+                            sorted_images = sorted(image_files, key=lambda x: natural_sort_key(os.path.basename(x)))
+                            
+                            sequence_folders.append({
+                                'path': seq_path,
+                                'date': date_folder,
+                                'sequence': seq_folder,
+                                'images': sorted_images,
+                                'count': len(sorted_images)
+                            })
     
     return sequence_folders
 
@@ -149,7 +187,7 @@ def draw_lanes(image, coords, dots_only=False, line_thickness=3, point_radius=4)
 def parse_args():
     parser = argparse.ArgumentParser(description='Ultra-Fast Lane Detection v2 - TuSimple Dataset Demo')
     parser.add_argument('config', help='Path to config file')
-    parser.add_argument('--dataset-root', type=str, required=True, help='Root path to TuSimple dataset (containing date folders like 0530/)')
+    parser.add_argument('--dataset-root', type=str, required=True, help='Root path to TuSimple data (can be a single date folder like /path/to/0601 or parent folder containing date folders)')
     parser.add_argument('--model', type=str, help='Path to model checkpoint (overrides config test_model)')
     parser.add_argument('--output-dir', type=str, default='./tusimple_output', help='Output directory for videos (default: ./tusimple_output)')
     parser.add_argument('--fps', type=float, default=30.0, help='Output video FPS (default: 30.0 for sequence viewing)')
@@ -217,7 +255,9 @@ def main():
     
     if not sequences:
         print(f"Error: No image sequences found in '{custom_args.dataset_root}'")
-        print("Expected structure: dataset_root/date_folder/sequence_folder/images")
+        print("Expected structure:")
+        print("  Option 1: dataset_root/sequence_folder/images (single date folder)")
+        print("  Option 2: dataset_root/date_folder/sequence_folder/images (parent folder)")
         return
     
     print(f"Found {len(sequences)} sequences:")
